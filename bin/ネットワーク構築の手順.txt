@@ -1,0 +1,36 @@
+# ブリッジの作成
+sudo ip link add br0 type bridge
+# デバイスの状態をUPに
+sudo ip link set br0 up
+
+# アドレスを追加
+sudo ip address add 172.24.0.1/16 dev br0
+
+# TAPを作成
+sudo ip tuntap add tap0 mode tap
+
+# TAPをブリッジに接続
+sudo ip link set tap0 master br0
+# デバイスの状態をUPに
+sudo ip link set tap0 up
+
+# MACアドレス
+mac_address="52:54:00:99:99:99"
+
+# QEMU起動
+qemu-system-x86_64 \
+  -nodefaults \    # デフォルトオプションを利用しない
+  -enable-kvm \    # KVMを利用する
+  -boot n \        # ネットワークブート
+  -nographic \	   # グラフィック出力を無効化
+  -serial stdio \  # シリアル出力をstdioに
+  -netdev tap,id=nic1,ifname=tap0,script=no,downscript=no \  # ネットワークデバイスを指定
+  -device virtio-net-pci,netdev=nic1,mac=${mac_address}	     # NICのドライバとMACアドレスを指定
+
+# 導通テスト
+sudo dhcpdump -i br0
+
+# TAPの削除
+sudo ip tuntap delete tap0 mode tap
+# ブリッジの削除
+sudo ip link delete br0 type bridge
