@@ -1,57 +1,54 @@
 package main
 
 import (
-	"flag"
 	"log"
-	"os"
-	"os/signal"
+	"net"
 
-	"golang.org/x/sync/errgroup"
-)
-
-var (
-	flgPXEBIOSBootFile  = flag.String("pxe-bios-boot-file", "pxelinux/pxelinux.0", "The file name used in PXE (Legacy BIOS)")
-	flgIPXEBIOSBootFile = flag.String("ipxe-bios-boot-file", "boot.ipxe", "The file name used in iPXE (Legacy BIOS)")
-
-	flgTFTPDir = flag.String("tftp-dir", "./tftpboot", "The base directory including files served by TFTP server")
-	flgHTTPDir = flag.String("http-dir", "./httpboot", "The base directory including files served by HTTP server")
-
-	flgDHCPListen = flag.String("dhcp-listen", "0.0.0.0:67", "Address and port to listen for DHCP requests on")
-	flgTFTPListen = flag.String("tftp-listen", "0.0.0.0:69", "Address and port to listen for TFTP requests on")
-	flgHTTPListen = flag.String("http-listen", "0.0.0.0:80", "Address and port to listen for HTTP requests on")
+	"go.universe.tf/netboot/dhcp4"
 )
 
 func main() {
-	flag.Parse()
-
-	dhcp := &DHCPServer{
-		PXEBIOSBootFile:  *flgPXEBIOSBootFile,
-		IPXEBIOSBootFile: *flgIPXEBIOSBootFile,
-	}
-	tftp := &TFTPServer{
-		TFTPDir: *flgTFTPDir,
-	}
-	http := &HTTPServer{
-		HTTPDir: *flgHTTPDir,
-	}
-
-	go func() {
-		c := make(chan os.Signal, 1)
-		signal.Notify(c, os.Interrupt)
-		<-c
-
-		dhcp.Shutdown()
-		tftp.Shutdown()
-		http.Shutdown()
-	}()
-
-	var g errgroup.Group
-
-	g.Go(func() error { return dhcp.Start(*flgDHCPListen) })
-	g.Go(func() error { return tftp.Start(*flgTFTPListen) })
-	g.Go(func() error { return http.Start(*flgHTTPListen) })
-	err := g.Wait()
+	listen := "0.0.0.0:67"
+	conn, err := dhcp4.NewConn(listen)
 	if err != nil {
-		log.Fatalf("[ERROR] %v", err)
+		log.Fatalf("[FATAL] Unable to listen on %s: %v", listen, err)
+	}
+	defer conn.Close()
+
+	log.Printf("[INFO] Starting DHCP server...")
+	for {
+		req, intf, err := conn.RecvDHCP()
+		if err != nil {
+			log.Fatalf("[ERROR] Failed to receive DHCP package: %v", err)
+		}
+
+		log.Printf("[INFO] Received %s from %s", req.Type, req.HardwareAddr)
+		resp := &dhcp4.Packet{
+			TransactionID: req.TransactionID,
+			HardwareAddr:  req.HardwareAddr,
+			ClientAddr:    req.ClientAddr,
+			YourAddr:      net.IPv4(172, 24, 32, 1),
+			Options:       make(dhcp4.Options),
+		}
+
+		resp.Options[dhcp4.OptSubnetMask] = net.IPv4Mask(255, 255, 0, 0)
+
+		switch req.Type {
+		case dhcp4.MsgDiscover:
+			resp.Type = dhcp4.MsgOffer
+
+		case dhcp4.MsgRequest:
+			resp.Type = dhcp4.MsgAck
+
+		default:
+			log.Printf("[WARN] message type %s not supported", req.Type)
+			continue
+		}
+
+		log.Printf("[INFO] Sending %s to %s", resp.Type, resp.HardwareAddr)
+		err = conn.SendDHCP(resp, intf)
+		if err != nil {
+			log.Printf("[ERROR] unable to send DHCP packet: %v", err)
+		}
 	}
 }
