@@ -1,54 +1,44 @@
 package main
 
 import (
+	"flag"
 	"log"
-	"net"
+	"os"
+	"os/signal"
 
-	"go.universe.tf/netboot/dhcp4"
+	"golang.org/x/sync/errgroup"
+)
+
+var (
+	flgPXEBootFile = flag.String("pxe-boot-file", "pxelinux/pxelinux.0", "The file name used in PXE boot mode")
+	flgTFTPBootDir = flag.String("tftp-boot-dir", "./tftpboot", "The directory including PXE images")
 )
 
 func main() {
-	listen := "0.0.0.0:67"
-	conn, err := dhcp4.NewConn(listen)
-	if err != nil {
-		log.Fatalf("[FATAL] Unable to listen on %s: %v", listen, err)
+	flag.Parse()
+
+	dhcp := &DHCPServer{
+		BootFilename: *flgPXEBootFile,
 	}
-	defer conn.Close()
+	tftp := &TFTPServer{
+		TFTPBootDir: *flgTFTPBootDir,
+	}
 
-	log.Printf("[INFO] Starting DHCP server...")
-	for {
-		req, intf, err := conn.RecvDHCP()
-		if err != nil {
-			log.Fatalf("[ERROR] Failed to receive DHCP package: %v", err)
-		}
+	go func() {
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, os.Interrupt)
+		<-c
 
-		log.Printf("[INFO] Received %s from %s", req.Type, req.HardwareAddr)
-		resp := &dhcp4.Packet{
-			TransactionID: req.TransactionID,
-			HardwareAddr:  req.HardwareAddr,
-			ClientAddr:    req.ClientAddr,
-			YourAddr:      net.IPv4(172, 24, 32, 1),
-			Options:       make(dhcp4.Options),
-		}
+		dhcp.Shutdown()
+		tftp.Shutdown()
+	}()
 
-		resp.Options[dhcp4.OptSubnetMask] = net.IPv4Mask(255, 255, 0, 0)
+	var g errgroup.Group
 
-		switch req.Type {
-		case dhcp4.MsgDiscover:
-			resp.Type = dhcp4.MsgOffer
-
-		case dhcp4.MsgRequest:
-			resp.Type = dhcp4.MsgAck
-
-		default:
-			log.Printf("[WARN] message type %s not supported", req.Type)
-			continue
-		}
-
-		log.Printf("[INFO] Sending %s to %s", resp.Type, resp.HardwareAddr)
-		err = conn.SendDHCP(resp, intf)
-		if err != nil {
-			log.Printf("[ERROR] unable to send DHCP packet: %v", err)
-		}
+	g.Go(func() error { return dhcp.Start("0.0.0.0:67") })
+	g.Go(func() error { return tftp.Start("0.0.0.0:69") })
+	err := g.Wait()
+	if err != nil {
+		log.Fatalf("[ERROR] %v", err)
 	}
 }
