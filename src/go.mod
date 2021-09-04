@@ -1,4 +1,4 @@
-module github.com/ueokande/building-boot-server
+module github.com/murata0531/Network-boot
 
 go 1.13
 
