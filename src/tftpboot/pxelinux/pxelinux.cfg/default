@@ -1,0 +1,7 @@
+default rancher
+prompt 0
+
+label rancher
+  kernel rancher/vmlinuz
+  initrd rancher/initrd
+  append console=ttyS0 rancher.autologin=ttyS0
