@@ -12,12 +12,13 @@ $ docker-compose build
 
 docker-compose up -d
 
-# コンテナのシェルに入りファイルを実行
+# コンテナのシェルに入りブートサーバの実行ファイルを作成
 
 ```
 $ docker-compose exec app /bin/bash
 
 $ cd src
 
-$ go run main.go
+$ go build .
 ```
+` Network-boot ` という実行ファイルが作成されているはずなので、それを実行すると `DHCPサーバ` 、 `TFTPサーバ` が起動する
