@@ -11,7 +11,7 @@ $ docker-compose build
 # コンテナ起動
 
 ```
-docker-compose up -d
+$ docker-compose up -d
 ```
 
 # コンテナのシェルに入りブートサーバの実行ファイルを作成
