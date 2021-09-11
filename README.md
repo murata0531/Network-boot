@@ -2,6 +2,8 @@
 
 ネットワークブートサーバ
 
+ネットワークブートクライアントはこちら → `https://github.com/murata0531/Network-boot-client`
+
 # コンテナ作成
 
 ```
